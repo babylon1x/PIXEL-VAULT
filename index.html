@@ -326,7 +326,7 @@
 
 <script>
 // ==================== CONSTANTS ====================
-const AUDIO_ENABLED = false;
+const AUDIO_ENABLED = true;
 const SCANLINES = false;
 
 const TIMER_SECS = 10;
@@ -368,7 +368,8 @@ function setState(s) {
 // ==================== DOM ====================
 const $ = (id) => document.getElementById(id);
 
-// ==================== AUDIO (Web Audio API oscillators, gated) ====================
+// ==================== AUDIO (mp3 effects from ./Sound effects) ====================
+const SOUND_DIR = 'Sound effects/';
 let audioCtx = null;
 function ensureAudio() {
   if (!AUDIO_ENABLED) return null;
@@ -378,10 +379,57 @@ function ensureAudio() {
     return audioCtx;
   } catch (e) { return null; }
 }
-function tone(freq, dur, type, when = 0, vol = 0.08) {
+
+// Load the 5 effect files once; all shared, all rewound on play.
+const SFX = {};
+const SFX_FILES = {
+  click: 'On Button click.mp3',
+  open:  'On Game Open.mp3',
+  over:  'On Game Over.mp3',
+  hover: 'On Hover.mp3',
+  win:   'On Right guess.mp3'
+};
+Object.keys(SFX_FILES).forEach(k => {
+  const a = new Audio(SOUND_DIR + SFX_FILES[k]);
+  a.preload = 'auto';
+  SFX[k] = a;
+});
+
+// plays an effect; browsers require a user gesture first, so "On Game Open"
+// at load is retried on the first click/keypress if autoplay was blocked.
+let openLoaded = false;
+function playOpenSound() {
+  if (!AUDIO_ENABLED || openLoaded) return;
+  const a = SFX.open;
+  if (!a) { openLoaded = true; return; }
+  try {
+    a.currentTime = 0;
+    const p = a.play();
+    if (p) p.then(() => { openLoaded = true; }).catch(() => {}); // blocked; retried on gesture
+    else openLoaded = true;
+  } catch (e) {}
+}
+function sfxPlay(name) {
+  if (!AUDIO_ENABLED) return;
+  const a = SFX[name];
+  if (!a) return;
+  try {
+    a.currentTime = 0;
+    const p = a.play();
+    if (p) p.catch(() => {});
+  } catch (e) {}
+}
+function sfxClick()    { sfxPlay('click'); }
+function sfxHover()    { sfxPlay('hover'); }
+function sfxCorrect()  { sfxPlay('win'); }
+function sfxGameOver() { sfxPlay('over'); }
+
+// synthesized feedback for cues the user did not provide a file for:
+// wrong-guess decoy (still has tries left) and the final-3s HURRY tick.
+function tone(freq, dur, type, vol = 0.08) {
   const ac = ensureAudio();
   if (!ac) return;
-  const t = ac.currentTime + when;
+  const t = ac.currentTime;
   const o = ac.createOscillator();
   const g = ac.createGain();
   o.type = type; o.frequency.setValueAtTime(freq, t);
@@ -390,22 +438,7 @@ function tone(freq, dur, type, when = 0, vol = 0.08) {
   o.connect(g); g.connect(ac.destination);
   o.start(t); o.stop(t + dur + 0.02);
 }
-function sfxClick()    { tone(200, 0.04, 'square'); }
-function sfxWrong()    { tone(120, 0.15, 'sawtooth', 0, 0.1); }
-function sfxCorrect()  { tone(440, 0.09, 'square', 0); tone(660, 0.12, 'square', 0.09); }
-function sfxExplosion() {
-  const ac = ensureAudio();
-  if (!ac) return;
-  const t = ac.currentTime;
-  const len = Math.floor(ac.sampleRate * 0.4);
-  const buf = ac.createBuffer(1, len, ac.sampleRate);
-  const d = buf.getChannelData(0);
-  for (let i = 0; i < len; i++) d[i] = (Math.random() * 2 - 1) * (1 - i / len);
-  const src = ac.createBufferSource(); src.buffer = buf;
-  const g = ac.createGain(); g.gain.value = 0.12;
-  src.connect(g); g.connect(ac.destination);
-  src.start(t);
-}
+function sfxWrong()    { tone(120, 0.15, 'sawtooth', 0.1); }
 function sfxTick()     { tone(800, 0.03, 'square'); }
 
 // ==================== UTILITIES ====================
@@ -784,7 +817,6 @@ function onTileClick(e) {
   if (tile.cracked) return;               // out of play: ignored, no try consumed
   const remaining = TIMER_SECS - (performance.now() - timerStart) / 1000;
   if (remaining <= 0) { endGame(); return; } // timer wins
-  sfxClick();
   if (tile.isTarget) winRound(tile);
   else wrongPick(tile);
 }
@@ -837,7 +869,7 @@ function endGame() {
   stopTimer();
   // timer hits 0 -> all tiles explode
   setState(STAT.LOSE);
-  sfxExplosion();
+  sfxGameOver();
   explodeAll();
   $('game').classList.add('shake');
   wait(1300).then(() => {
@@ -847,7 +879,7 @@ function endGame() {
 }
 
 async function explodeScene(panelId) {
-  sfxExplosion();
+  sfxGameOver();
   $('game').classList.add('shake');
   explodeAll();
   await wait(1300);           // let the explosion play out
@@ -1053,6 +1085,11 @@ function bindEvents() {
     }
   });
 
+  // hover sfx on every interactive element (buttons + tiles)
+  document.querySelectorAll('.btn, .tile').forEach(el => {
+    el.addEventListener('mouseenter', () => sfxHover());
+  });
+
   window.addEventListener('resize', () => {
     // percentage-based layout reflows automatically; re-snap bases
     tiles.forEach(t => applyTilePosition(t));
@@ -1066,6 +1103,10 @@ function init() {
   bindEvents();
   resetTiles();
   goToIdle(false);
+  // game-open sfx: attempt now, and again on the first gesture if autoplay blocked
+  playOpenSound();
+  window.addEventListener('pointerdown', playOpenSound, { once: true });
+  window.addEventListener('keydown', playOpenSound, { once: true });
 }
 init();
 </script>
