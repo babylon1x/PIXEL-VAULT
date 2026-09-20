@@ -643,6 +643,7 @@ function resetTiles() {
     t.isTarget = false;
     t.cracked = false;
     t.el.classList.remove('cracked', 'win');
+    t.el.style.visibility = '';
     t.el.style.transform = '';
     applyTilePosition(t);
   });
