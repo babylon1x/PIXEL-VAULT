@@ -1,0 +1,1073 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>PIXEL VAULT</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Press+Start+2P&display=swap" rel="stylesheet">
+<style>
+  /* ---------- reset / base ---------- */
+  * { margin: 0; padding: 0; box-sizing: border-box; }
+  html, body { height: 100%; overflow: hidden; }
+  body {
+    font-family: 'Press Start 2P', monospace;
+    background: #1a1a2e;
+    color: #f5f5f5;
+    image-rendering: pixelated;
+    -webkit-user-select: none;
+    user-select: none;
+  }
+  button { font-family: inherit; }
+
+  /* ---------- scanline overlay (dev constant, off by default) ---------- */
+  body.scanlines #game::after {
+    content: "";
+    position: absolute; inset: 0;
+    pointer-events: none;
+    z-index: 900;
+    background-image: url("data:image/svg+xml,%3Csvg%20xmlns='http://www.w3.org/2000/svg'%20width='4'%20height='4'%3E%3Cpath%20fill='%230a0a15'%20d='M0%201h4v1H0z'/%3E%3C/svg%3E");
+  }
+
+  /* ---------- layout ---------- */
+  #game {
+    position: relative;
+    width: 100vw; height: 100vh;
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    justify-content: center;
+    gap: 18px;
+    overflow: hidden;
+  }
+  #title {
+    font-size: 22px;
+    color: #ffd369;
+    text-shadow: 4px 4px 0 #0a0a15;
+    letter-spacing: 2px;
+  }
+
+  #stage {
+    position: relative;
+    width: min(92vw, 60vh);
+    max-width: 680px;
+  }
+  #grid {
+    position: relative;
+    width: 100%;
+    aspect-ratio: 3 / 2;
+  }
+
+  /* ---------- vault doors ---------- */
+  .tile {
+    position: absolute;
+    width: 30.5%;
+    height: 45%;
+    cursor: pointer;
+    transition: transform 0.8s ease-in-out;
+  }
+  .door {
+    position: absolute; inset: 0;
+    background: #16213e;
+    border: 4px solid #0a0a15;
+    box-shadow:
+      inset 5px 5px 0 0 #0f3460,
+      inset -5px -5px 0 0 #533483;
+  }
+  .rivet {
+    position: absolute;
+    top: 11%;
+    width: 13px; height: 13px;
+    background: #0f3460;
+    border: 2px solid #0a0a15;
+    box-shadow:
+      inset 2px 2px 0 0 #ffd369,
+      2px 2px 0 0 #0a0a15;
+  }
+  .rivet-l { left: 12%; }
+  .rivet-r { right: 12%; }
+  .keyhole {
+    position: absolute;
+    left: 50%; top: 50%;
+    transform: translate(-50%, -50%);
+    width: 22px; height: 28px;
+  }
+  .static-ov, .crack-ov {
+    position: absolute; inset: 0;
+    opacity: 0;
+    pointer-events: none;
+    transition: opacity 0.3s;
+    z-index: 2;
+  }
+  .crack-ov { z-index: 3; }
+  .sprite {
+    position: absolute; inset: 0;
+    background-size: cover;
+    background-position: center;
+    opacity: 0;
+    pointer-events: none;
+    z-index: 4;
+  }
+  .tile.cracked .static-ov { opacity: 1; }
+  .tile.cracked .crack-ov  { opacity: 1; }
+  .tile.cracked .door { animation: door-shake 0.3s linear; }
+  @keyframes door-shake {
+    0%   { transform: translate(0,0); }
+    20%  { transform: translate(4px,-4px); }
+    40%  { transform: translate(-4px,4px); }
+    60%  { transform: translate(4px,4px); }
+    80%  { transform: translate(-4px,-4px); }
+    100% { transform: translate(0,0); }
+  }
+  .tile.win .door   { animation: door-fade  0.5s steps(2, end) forwards; }
+  .tile.win .sprite { animation: sprite-in  0.5s steps(2, end) forwards; }
+  @keyframes door-fade { 0% {opacity:1;} 50% {opacity:0;} 100% {opacity:0;} }
+  @keyframes sprite-in { 0% {opacity:0; transform:scaleX(0.05);} 50% {opacity:1; transform:scaleX(1);} 100% {opacity:1; transform:scaleX(1);} }
+
+  /* ---------- HUD ---------- */
+  #hud {
+    width: min(92vw, 60vh, 680px);
+    display: flex;
+    flex-direction: column;
+    gap: 12px;
+  }
+  #timerbar {
+    width: 100%;
+    height: 22px;
+    background: #0a0a15;
+    border: 4px solid #0f3460;
+  }
+  #timerfill { height: 100%; width: 100%; background: #52d94c; }
+  #statusline {
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    font-size: 11px;
+    color: #f5f5f5;
+  }
+  #hurry {
+    display: none;
+    color: #e94560;
+    text-shadow: 2px 2px 0 #0a0a15;
+  }
+  #hurry.on {
+    display: inline-block;
+    animation: blink 0.5s steps(1, end) infinite;
+  }
+  @keyframes blink { 0%{opacity:1;} 50%{opacity:0;} 100%{opacity:1;} }
+  #clue { color: #ffd369; }
+
+  /* ---------- preview overlay ---------- */
+  #preview {
+    position: absolute; inset: 0;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    background: #1a1a2e;
+    z-index: 800;
+    pointer-events: none;
+  }
+  #preview[hidden] { display: none; }
+  #preview-canvas { display: block; }
+
+  /* ---------- buttons ---------- */
+  .btn {
+    display: inline-block;
+    padding: 14px 18px;
+    font-size: 12px;
+    color: #ffd369;
+    background: #16213e;
+    border: 4px solid #0f3460;
+    box-shadow: 0 4px 0 0 #0a0a15;
+    cursor: pointer;
+    transition: transform 0.1s;
+    text-transform: uppercase;
+  }
+  .btn:hover  { transform: translateY(1px); background: #ffd369; color: #16213e; border-color: #0a0a15; }
+  .btn:active { transform: translateY(2px); background: #e94560; color: #f5f5f5; }
+
+  /* ---------- overlays / panels ---------- */
+  .panel {
+    position: absolute; inset: 0;
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    justify-content: center;
+    gap: 24px;
+    background: rgba(26,26,46,0.92);
+    z-index: 1000;
+    padding: 24px;
+    text-align: center;
+  }
+  .panel[hidden] { display: none; }
+  .panel-title { font-size: 26px; color: #ffd369; text-shadow: 4px 4px 0 #0a0a15; }
+  .panel-title.hot { color: #e94560; }
+  .panel-sub { font-size: 11px; color: #f5f5f5; line-height: 1.9; }
+  .panel-btns { display: flex; gap: 16px; flex-wrap: wrap; justify-content: center; }
+  .drop-hint { font-size: 10px; color: #533483; }
+
+  /* ---------- toast / popup ---------- */
+  #toast {
+    position: fixed;
+    left: 50%; bottom: 34px;
+    transform: translateX(-50%);
+    padding: 14px 18px;
+    background: #16213e;
+    color: #e94560;
+    border: 4px solid #0f3460;
+    box-shadow: 0 4px 0 0 #0a0a15;
+    z-index: 1200;
+    font-size: 11px;
+    opacity: 0;
+    pointer-events: none;
+    transition: opacity 0.2s;
+  }
+  #toast.on { opacity: 1; }
+  .pop {
+    position: fixed;
+    z-index: 950;
+    padding: 8px 10px;
+    font-size: 12px;
+    color: #f5f5f5;
+    background: #e94560;
+    border: 3px solid #0a0a15;
+    pointer-events: none;
+    animation: pop-up 0.9s ease-out forwards;
+  }
+  @keyframes pop-up {
+    0%   { transform: translate(0, 0); opacity: 0; }
+    15%  { opacity: 1; }
+    100% { transform: translate(0, -54px); opacity: 0; }
+  }
+
+  /* ---------- fx layers ---------- */
+  .sq {
+    position: fixed;
+    width: 8px; height: 8px;
+    pointer-events: none;
+    z-index: 1100;
+    background: #ffd369;
+  }
+  .chunk {
+    position: fixed;
+    pointer-events: none;
+    z-index: 1100;
+    background: #533483;
+  }
+  #game.shake { animation: screenshake 1.2s steps(2, end); }
+  @keyframes screenshake {
+    0%   { transform: translate(0,0); }
+    10%  { transform: translate(9px,-9px); }
+    25%  { transform: translate(-9px,7px); }
+    40%  { transform: translate(7px,9px); }
+    55%  { transform: translate(-6px,-6px); }
+    70%  { transform: translate(4px,5px); }
+    85%  { transform: translate(-3px,-3px); }
+    100% { transform: translate(0,0); }
+  }
+</style>
+</head>
+<body>
+  <div id="game">
+    <h1 id="title">PIXEL VAULT</h1>
+
+    <div id="stage">
+      <div id="grid"></div>
+    </div>
+
+    <div id="hud">
+      <div id="timerbar"><div id="timerfill"></div></div>
+      <div id="statusline">
+        <span id="tries">TRIES: 2</span>
+        <span id="hurry">HURRY!</span>
+        <span id="clue">FIND THE IMAGE</span>
+      </div>
+    </div>
+
+    <div id="overlay">
+      <div id="start-panel" class="panel">
+        <div class="panel-title">PIXEL VAULT</div>
+        <div class="panel-sub">
+          WATCH THE HEIST PREVIEW.<br>
+          TRACK THE IMAGE ACROSS THE SHUFFLE.<br>
+          YOU HAVE 10 SECONDS AND 2 TRIES.<br>
+          MISS AND THE VAULT BLOWS.<br>
+          CLICK THE TILE HIDING THE IMAGE TO WIN.
+        </div>
+        <div class="panel-btns">
+          <button class="btn" id="btn-upload">UPLOAD IMAGE</button>
+          <button class="btn" id="btn-default">USE PIXEL DEFAULT</button>
+        </div>
+        <div class="drop-hint">OR DRAG &amp; DROP AN IMAGE</div>
+      </div>
+
+      <div id="win-panel" class="panel" hidden>
+        <div class="panel-title">VAULT CRACKED!</div>
+        <div class="panel-btns">
+          <button class="btn" id="btn-win-again">Play Again</button>
+          <button class="btn" id="btn-win-new">New Image</button>
+        </div>
+      </div>
+
+      <div id="lose-panel" class="panel" hidden>
+        <div class="panel-title hot">VAULT BLOWN!</div>
+        <div class="panel-btns">
+          <button class="btn" id="btn-lose-again">Try Again</button>
+          <button class="btn" id="btn-lose-new">New Image</button>
+        </div>
+      </div>
+    </div>
+
+    <div id="preview" hidden><canvas id="preview-canvas"></canvas></div>
+    <div id="toast"></div>
+    <input type="file" id="file" accept="image/jpeg,image/png,image/webp,image/gif" hidden>
+  </div>
+
+<script>
+// ==================== CONSTANTS ====================
+const AUDIO_ENABLED = false;
+const SCANLINES = false;
+
+const TIMER_SECS = 10;
+const TRIES_MAX = 2;
+const SHUFFLE_ROUNDS = 3;
+const ROUND_MS = 800;        // each shuffle round = 0.8s (2-3 swaps run in parallel)
+const PREVIEW_MS = 1500;     // pixel-dissolve duration
+const PREVIEW_HOLD = 500;    // hold so PREVIEW state totals ~2.0s
+const HIDE_MS = 600;
+const TEXTURE_SIZE = 128;
+
+const C = {
+  bg:     '#1a1a2e',
+  panel:  '#16213e',
+  hot:    '#e94560',
+  cool:   '#0f3460',
+  hl:     '#ffd369',
+  txt:    '#f5f5f5',
+  sh:     '#0a0a15',
+  static: '#533483',
+  green:  '#52d94c' // timer bar "green" per locked animation spec (see Assumptions)
+};
+
+const CHUNK_COLORS = ['#16213e', '#0f3460', '#e94560', '#ffd369', '#533483', '#0a0a15'];
+const BURST_COLORS = ['#e94560', '#ffd369', '#f5f5f5', '#533483', '#0f3460'];
+
+// ==================== STATE MACHINE ====================
+// IDLE -> PREVIEW -> HIDING -> SHUFFLING -> PLAYING -> WIN / LOSE
+const STAT = { IDLE:'IDLE', PREVIEW:'PREVIEW', HIDING:'HIDING', SHUFFLING:'SHUFFLING', PLAYING:'PLAYING', WIN:'WIN', LOSE:'LOSE' };
+let state = STAT.IDLE;
+let gameOverFlag = false;
+
+function setState(s) {
+  state = s;
+  document.getElementById('clue').textContent =
+    s === STAT.PLAYING ? 'FIND THE IMAGE' : '';
+}
+
+// ==================== DOM ====================
+const $ = (id) => document.getElementById(id);
+
+// ==================== AUDIO (Web Audio API oscillators, gated) ====================
+let audioCtx = null;
+function ensureAudio() {
+  if (!AUDIO_ENABLED) return null;
+  try {
+    if (!audioCtx) audioCtx = new (window.AudioContext || window.webkitAudioContext)();
+    if (audioCtx.state === 'suspended') audioCtx.resume();
+    return audioCtx;
+  } catch (e) { return null; }
+}
+function tone(freq, dur, type, when = 0, vol = 0.08) {
+  const ac = ensureAudio();
+  if (!ac) return;
+  const t = ac.currentTime + when;
+  const o = ac.createOscillator();
+  const g = ac.createGain();
+  o.type = type; o.frequency.setValueAtTime(freq, t);
+  g.gain.setValueAtTime(vol, t);
+  g.gain.exponentialRampToValueAtTime(0.0001, t + dur);
+  o.connect(g); g.connect(ac.destination);
+  o.start(t); o.stop(t + dur + 0.02);
+}
+function sfxClick()    { tone(200, 0.04, 'square'); }
+function sfxWrong()    { tone(120, 0.15, 'sawtooth', 0, 0.1); }
+function sfxCorrect()  { tone(440, 0.09, 'square', 0); tone(660, 0.12, 'square', 0.09); }
+function sfxExplosion() {
+  const ac = ensureAudio();
+  if (!ac) return;
+  const t = ac.currentTime;
+  const len = Math.floor(ac.sampleRate * 0.4);
+  const buf = ac.createBuffer(1, len, ac.sampleRate);
+  const d = buf.getChannelData(0);
+  for (let i = 0; i < len; i++) d[i] = (Math.random() * 2 - 1) * (1 - i / len);
+  const src = ac.createBufferSource(); src.buffer = buf;
+  const g = ac.createGain(); g.gain.value = 0.12;
+  src.connect(g); g.connect(ac.destination);
+  src.start(t);
+}
+function sfxTick()     { tone(800, 0.03, 'square'); }
+
+// ==================== UTILITIES ====================
+function wait(ms) { return new Promise(r => setTimeout(r, ms)); }
+function randInt(n) { return Math.floor(Math.random() * n); }
+function shuffleArr(a) {
+  for (let i = a.length - 1; i > 0; i--) {
+    const j = randInt(i + 1);
+    [a[i], a[j]] = [a[j], a[i]];
+  }
+  return a;
+}
+function lerpColor(a, b, t) {
+  const pa = a.match(/\w\w/g).map(h => parseInt(h, 16));
+  const pb = b.match(/\w\w/g).map(h => parseInt(h, 16));
+  const p = pa.map((v, i) => Math.round(v + (pb[i] - v) * t));
+  return '#' + p.map(x => x.toString(16).padStart(2, '0')).join('');
+}
+
+// ==================== CANVAS TEXTURES (generated, no external assets) ====================
+let staticData, crackData;
+
+function makeStaticTexture() {
+  const c = document.createElement('canvas');
+  c.width = c.height = TEXTURE_SIZE;
+  const x = c.getContext('2d');
+  x.fillStyle = C.sh; x.fillRect(0, 0, TEXTURE_SIZE, TEXTURE_SIZE);
+  for (let i = 0; i < 420; i++) {
+    x.fillStyle = Math.random() < 0.5 ? C.static : (Math.random() < 0.5 ? C.panel : C.sh);
+    x.fillRect(randInt(TEXTURE_SIZE), randInt(TEXTURE_SIZE), 2, 2);
+  }
+  return c.toDataURL();
+}
+
+function makeCrackTexture() {
+  const c = document.createElement('canvas');
+  c.width = c.height = TEXTURE_SIZE;
+  const x = c.getContext('2d');
+  const drawLine = (startX, col, lw) => {
+    x.strokeStyle = col; x.lineWidth = lw; x.lineJoin = 'miter';
+    x.beginPath();
+    x.moveTo(startX, 0);
+    let px = startX;
+    for (let y = 8; y <= TEXTURE_SIZE; y += 8) {
+      px += (Math.random() - 0.5) * 22;
+      x.lineTo(px, y);
+    }
+    x.lineTo(px, TEXTURE_SIZE);
+    x.stroke();
+  };
+  drawLine(TEXTURE_SIZE * 0.45, C.sh, 4);
+  drawLine(TEXTURE_SIZE * 0.50, C.sh, 4);
+  drawLine(TEXTURE_SIZE * 0.41, C.sh, 3);
+  drawLine(TEXTURE_SIZE * 0.46, C.static, 2);
+  return c.toDataURL();
+}
+
+// ==================== BUILT-IN PIXEL TREASURE CHEST ====================
+// 16x13 pixel map. '#' shadow outline, 'G' gold, 'B' body blue, 'R' red gem.
+const CHEST_MAP = [
+  '................',
+  '......####......',
+  '.....#GGGG#.....',
+  '....#GGGGGG#....',
+  '...#GGGRRGGG#...',
+  '...#G##GG##G#...',
+  '...#GGGGGGGG#...',
+  '..##GGGGGGGG##..',
+  '.##BBBBBBBBBB##.',
+  '.#BBBBBBBBBBBB#.',
+  '.#BB##BBBB##BB#.',
+  '.#BBB#GGGG#BBB#.',
+  '.##############.'
+];
+const CHEST_COLS = { '#': C.sh, 'G': C.hl, 'B': C.cool, 'R': C.hot };
+
+function drawChest() {
+  const c = document.createElement('canvas');
+  c.width = CHEST_MAP[0].length * 8;
+  c.height = CHEST_MAP.length * 8;
+  const x = c.getContext('2d');
+  x.imageSmoothingEnabled = false;
+  for (let r = 0; r < CHEST_MAP.length; r++) {
+    const row = CHEST_MAP[r];
+    for (let col = 0; col < row.length; col++) {
+      const ch = row[col];
+      if (CHEST_COLS[ch]) {
+        x.fillStyle = CHEST_COLS[ch];
+        x.fillRect(col * 8, r * 8, 8, 8);
+      }
+    }
+  }
+  return c;
+}
+
+// ==================== CANVAS IMAGE PROCESSING ====================
+let gameImage = null;        // { canvas, dataURL, isDefault }
+let imgEl = null;            // <img> decoded from gameImage dataURL
+let isDefaultImage = false;
+
+function loadImageEl(src, smoothing) {
+  return new Promise((resolve, reject) => {
+    const im = new Image();
+    im.onload = () => resolve(im);
+    im.onerror = () => reject(new Error('BAD_IMAGE'));
+    im.src = src;
+  });
+}
+
+async function prepareImage(file) {
+  // validate: non-image, >10MB
+  if (!file.type || !file.type.startsWith('image/')) throw new Error('NOT_IMAGE');
+  if (file.size > 10 * 1024 * 1024) throw new Error('TOO_BIG');
+  // decode (gif -> first frame used by drawImage)
+  const url = URL.createObjectURL(file);
+  let im;
+  try { im = await loadImageEl(url); }
+  catch (e) { URL.revokeObjectURL(url); throw new Error('BAD_IMAGE'); }
+  URL.revokeObjectURL(url);
+  const w = im.naturalWidth, h = im.naturalHeight;
+  if (w < 100 || h < 100) throw new Error('TOO_SMALL');
+  // downscale to max 1200px on longest side
+  const scale = Math.min(1, 1200 / Math.max(w, h));
+  const dw = Math.round(w * scale), dh = Math.round(h * scale);
+  const c = document.createElement('canvas');
+  c.width = dw; c.height = dh;
+  const x = c.getContext('2d');
+  x.imageSmoothingEnabled = true;
+  // composite transparent PNG/GIF onto #1a1a2e
+  x.fillStyle = C.bg;
+  x.fillRect(0, 0, dw, dh);
+  x.drawImage(im, 0, 0, dw, dh);
+  return { canvas: c, dataURL: c.toDataURL('image/png'), isDefault: false };
+}
+
+async function useDefaultChest() {
+  const c = drawChest();
+  return { canvas: c, dataURL: c.toDataURL('image/png'), isDefault: true };
+}
+
+async function setGameImage(src) {
+  gameImage = src;
+  isDefaultImage = src.isDefault;
+  imgEl = await loadImageEl(src.dataURL);
+  // prepare background sprites on tiles
+  document.querySelectorAll('.tile').forEach(t => {
+    const s = t.querySelector('.sprite');
+    s.style.backgroundImage = `url(${src.dataURL})`;
+    s.style.imageRendering = isDefaultImage ? 'pixelated' : 'auto';
+  });
+  // pre-generate textures once
+  if (!staticData) { staticData = makeStaticTexture(); crackData = makeCrackTexture(); }
+  document.querySelectorAll('.tile').forEach(t => {
+    t.querySelector('.static-ov').style.backgroundImage = `url(${staticData})`;
+    t.querySelector('.crack-ov').style.backgroundImage = `url(${crackData})`;
+  });
+}
+
+// ==================== TILE ARCHITECTURE ====================
+// DOM order is fixed for the page lifetime. Each tile is a JS object
+// { id, position, isTarget, cracked }. Shuffling only animates
+// transform: translate() and updates `position` values afterwards.
+const tiles = [];
+const tileEls = {};
+
+function buildTiles() {
+  const grid = $('grid');
+  for (let i = 0; i < 6; i++) {
+    const el = document.createElement('div');
+    el.className = 'tile';
+    el.dataset.id = i;
+    el.innerHTML =
+      '<div class="door">' +
+        '<span class="rivet rivet-l"></span>' +
+        '<span class="rivet rivet-r"></span>' +
+        '<svg class="keyhole" viewBox="0 0 20 26" aria-hidden="true">' +
+          '<circle cx="10" cy="9" r="6" fill="#0a0a15" stroke="#ffd369" stroke-width="2"/>' +
+          '<rect x="7" y="12" width="6" height="13" fill="#0a0a15" stroke="#ffd369" stroke-width="2"/>' +
+        '</svg>' +
+      '</div>' +
+      '<div class="static-ov"></div>' +
+      '<div class="crack-ov"></div>' +
+      '<div class="sprite"></div>';
+    grid.appendChild(el);
+    tiles.push({ id: i, position: i, isTarget: false, cracked: false, el });
+    tileEls[i] = el;
+    el.addEventListener('click', onTileClick);
+  }
+}
+
+// base left/top (percentage) from position map; DOM order never changed
+function applyTilePosition(t) {
+  const col = t.position % 3;
+  const row = Math.floor(t.position / 3);
+  t.el.style.left = (col * 33.3333 + 1.6) + '%';
+  t.el.style.top  = (row * 50 + 2.5) + '%';
+}
+
+function resetTiles() {
+  tiles.forEach((t, i) => {
+    t.position = i;
+    t.isTarget = false;
+    t.cracked = false;
+    t.el.classList.remove('cracked', 'win');
+    t.el.style.transform = '';
+    applyTilePosition(t);
+  });
+}
+
+// ==================== TILE SHUFFLE LOGIC ====================
+// Swap two tiles purely with transform translate. Only after the
+// animation finishes do we swap the `position` values, then snap
+// left/top to the new bases (with transitions disabled) and clear
+// the transform so none is ever left on a resting tile.
+function swapTiles(a, b) {
+  return new Promise(resolve => {
+    const ea = tileEls[a], eb = tileEls[b];
+    const ra = ea.getBoundingClientRect();
+    const rb = eb.getBoundingClientRect();
+    const dx = rb.left - ra.left;
+    const dy = rb.top - ra.top;
+    ea.style.transform = `translate(${dx}px, ${dy}px)`;
+    eb.style.transform = `translate(${-dx}px, ${-dy}px)`;
+
+    let done = false;
+    const finish = () => {
+      if (done) return;
+      done = true;
+      // swap positions in the data model
+      const pa = tiles[a].position;
+      tiles[a].position = tiles[b].position;
+      tiles[b].position = pa;
+      // snap bases without animating, then clear transforms
+      ea.style.transition = 'none';
+      eb.style.transition = 'none';
+      applyTilePosition(tiles[a]);
+      applyTilePosition(tiles[b]);
+      void ea.offsetWidth; void eb.offsetWidth;
+      ea.style.transform = '';
+      eb.style.transform = '';
+      ea.style.transition = '';
+      eb.style.transition = '';
+      resolve();
+    };
+    let remaining = 2;
+    const onEnd = () => { if (--remaining === 0) finish(); };
+    ea.addEventListener('transitionend', onEnd, { once: true });
+    eb.addEventListener('transitionend', onEnd, { once: true });
+    setTimeout(finish, ROUND_MS + 60); // safety net
+  });
+}
+
+async function runShuffle() {
+  for (let round = 0; round < SHUFFLE_ROUNDS; round++) {
+    // 2-3 random disjoint swaps this round, animating together
+    const k = 2 + randInt(2); // 2 or 3
+    const order = shuffleArr([0, 1, 2, 3, 4, 5]);
+    const tasks = [];
+    for (let i = 0; i < k; i++) {
+      tasks.push(swapTiles(order[i * 2], order[i * 2 + 1]));
+    }
+    await Promise.all(tasks);
+  }
+}
+
+// ==================== PIXEL DISSOLVE PREVIEW ====================
+function runPreview() {
+  const cv = $('preview-canvas');
+  const ctx = cv.getContext('2d');
+  cv.width = window.innerWidth;
+  cv.height = window.innerHeight;
+  ctx.fillStyle = C.bg;
+  ctx.fillRect(0, 0, cv.width, cv.height);
+
+  const iw = imgEl.naturalWidth, ih = imgEl.naturalHeight;
+  const scale = Math.min(cv.width / iw, cv.height / ih);
+  const dw = iw * scale, dh = ih * scale;
+  const ox = (cv.width - dw) / 2, oy = (cv.height - dh) / 2;
+
+  ctx.imageSmoothingEnabled = !isDefaultImage;
+
+  // cell grid; random-order dissolve reveal
+  const cell = Math.max(14, Math.min(34, Math.min(cv.width, cv.height) / 16));
+  const cols = Math.ceil(cv.width / cell), rows = Math.ceil(cv.height / cell);
+  const cells = [];
+  for (let r = 0; r < rows; r++) for (let cI = 0; cI < cols; cI++) cells.push([r, cI]);
+  shuffleArr(cells);
+
+  return new Promise(resolve => {
+    let idx = 0;
+    const t0 = performance.now();
+    const step = (t) => {
+      const p = Math.min(1, (t - t0) / PREVIEW_MS);
+      const target = Math.floor(p * cells.length);
+      while (idx < target) {
+        const [r, cI] = cells[idx++];
+        const x = cI * cell, y = r * cell;
+        const sx = (x - ox) / scale, sy = (y - oy) / scale;
+        const sw = cell / scale, sh = cell / scale;
+        ctx.drawImage(imgEl, sx, sy, sw, sh, x, y, cell, cell);
+      }
+      if (p < 1) requestAnimationFrame(step);
+      else resolve();
+    };
+    requestAnimationFrame(step);
+  });
+}
+
+// ==================== IMAGE HIDES INTO TILE ====================
+async function runHiding(targetTile) {
+  const cv = $('preview-canvas');
+  const rect = tileEls[targetTile].getBoundingClientRect();
+  const sRect = cv.getBoundingClientRect();
+  const dx = rect.left + rect.width / 2 - (sRect.left + sRect.width / 2);
+  const dy = rect.top + rect.height / 2 - (sRect.top + sRect.height / 2);
+  cv.style.transition = `transform ${HIDE_MS}ms ease-in, opacity ${HIDE_MS}ms ease-in`;
+  cv.style.transform = `translate(${dx}px, ${dy}px) scale(0.04)`;
+  cv.style.opacity = '0';
+  await wait(HIDE_MS);
+  cv.style.transition = '';
+  cv.style.transform = '';
+  cv.style.opacity = '1';
+  $('preview').hidden = true;
+}
+
+// ==================== TIMER (performance.now, no drift) ====================
+let timerStart = 0;
+let triesLeft = TRIES_MAX;
+let timerRAF = 0;
+let lastTick = -1;
+
+function startTimer() {
+  timerStart = performance.now();
+  lastTick = -1;
+  const fill = $('timerfill');
+  const loop = (t) => {
+    const elapsed = (t - timerStart) / 1000;
+    let remaining = TIMER_SECS - elapsed;
+    if (remaining <= 0) { remaining = 0; endGame(); return; }
+    const frac = remaining / TIMER_SECS;
+    fill.style.width = (frac * 100) + '%';
+    fill.style.background = frac >= 0.5
+      ? lerpColor(C.green, C.hl, (1 - frac) * 2)
+      : lerpColor(C.hl, C.hot, (0.5 - frac) * 2);
+    // final 3 seconds: flashing HURRY + per-second tick
+    const sec = Math.ceil(remaining);
+    if (remaining <= 3) {
+      $('hurry').classList.add('on');
+      if (sec !== lastTick && sec >= 1 && sec <= 3) { lastTick = sec; sfxTick(); }
+    } else {
+      $('hurry').classList.remove('on');
+      lastTick = -1;
+    }
+    timerRAF = requestAnimationFrame(loop);
+  };
+  timerRAF = requestAnimationFrame(loop);
+}
+function stopTimer() {
+  cancelAnimationFrame(timerRAF);
+  $('hurry').classList.remove('on');
+}
+function clearTimerUI() {
+  stopTimer();
+  $('timerfill').style.width = '100%';
+  $('timerfill').style.background = C.green;
+  triesLeft = TRIES_MAX;
+  $('tries').textContent = 'TRIES: ' + triesLeft;
+}
+
+// ==================== TILE CLICKS ====================
+function onTileClick(e) {
+  if (state !== STAT.PLAYING) return;
+  const el = e.target.closest('.tile');
+  if (!el) return;
+  const tile = tiles[+el.dataset.id];
+  if (tile.cracked) return;               // out of play: ignored, no try consumed
+  const remaining = TIMER_SECS - (performance.now() - timerStart) / 1000;
+  if (remaining <= 0) { endGame(); return; } // timer wins
+  sfxClick();
+  if (tile.isTarget) winRound(tile);
+  else wrongPick(tile);
+}
+
+function wrongPick(tile) {
+  triesLeft--;
+  $('tries').textContent = 'TRIES: ' + triesLeft;
+  tile.cracked = true;
+  tile.el.classList.add('cracked');
+  sfxWrong();
+  spawnPop(tile.el, 'DECOY!');
+  if (triesLeft <= 0) {
+    // lock input now (state -> LOSE), let the 0.3s crack anim play, then explode
+    gameOverFlag = true;
+    stopTimer();
+    setState(STAT.LOSE);
+    setTimeout(() => explodeScene('lose-panel'), 400);
+  }
+}
+
+function winRound(tile) {
+  if (gameOverFlag || state === STAT.WIN || state === STAT.LOSE) return;
+  stopTimer();
+  gameOverFlag = true;
+  tile.el.classList.add('win');
+  sfxCorrect();
+  const rect = tile.el.getBoundingClientRect();
+  pixelBurst(rect, BURST_COLORS, 26);
+  // keep input locked through the 0.5s flip reveal, then raise the overlay
+  state = STAT.WIN;
+  $('clue').textContent = '';
+  setTimeout(() => {
+    confetti();
+    showPanel('win-panel');
+  }, 550);
+}
+
+// ==================== WIN / LOSE ORCHESTRATION ====================
+function showPanel(id) {
+  document.querySelectorAll('.panel').forEach(p => p.hidden = true);
+  $(id).hidden = false;
+}
+function hidePanels() {
+  document.querySelectorAll('.panel').forEach(p => p.hidden = true);
+}
+
+function endGame() {
+  if (gameOverFlag || state === STAT.WIN || state === STAT.LOSE) return;
+  gameOverFlag = true;
+  stopTimer();
+  // timer hits 0 -> all tiles explode
+  setState(STAT.LOSE);
+  sfxExplosion();
+  explodeAll();
+  $('game').classList.add('shake');
+  wait(1300).then(() => {
+    $('game').classList.remove('shake');
+    showPanel('lose-panel');
+  });
+}
+
+async function explodeScene(panelId) {
+  sfxExplosion();
+  $('game').classList.add('shake');
+  explodeAll();
+  await wait(1300);           // let the explosion play out
+  $('game').classList.remove('shake');
+  showPanel(panelId);
+}
+
+function explodeAll() {
+  tiles.forEach(t => {
+    t.el.style.visibility = 'hidden';
+    const rect = t.el.getBoundingClientRect();
+    const n = 8 + randInt(9);               // 8-16 chunks per tile
+    for (let i = 0; i < n; i++) {
+      const ch = document.createElement('div');
+      ch.className = 'chunk';
+      ch.style.left = (rect.left + Math.random() * rect.width) + 'px';
+      ch.style.top  = (rect.top + Math.random() * rect.height) + 'px';
+      const s = Math.max(8, Math.min(rect.width, rect.height) / (2 + Math.random() * 2));
+      ch.style.width = s + 'px';
+      ch.style.height = s + 'px';
+      ch.style.background = CHUNK_COLORS[randInt(CHUNK_COLORS.length)];
+      document.body.appendChild(ch);
+      const vx = (Math.random() - 0.5) * 900;
+      const vy = -200 - Math.random() * 500;
+      let x = parseFloat(ch.style.left), y = parseFloat(ch.style.top);
+      let rot = 0, vr = (Math.random() - 0.5) * 900;
+      const t0 = performance.now();
+      (function fall(t) {
+        const dt = (t - t0) / 1000;
+        const px = x + vx * dt;
+        const py = y + vy * dt + 0.5 * 900 * dt * dt;
+        ch.style.transform = `translate(${px - x}px, ${py - y}px) rotate(${rot}deg)`;
+        rot += vr * dt;
+        if (dt < 1.2) requestAnimationFrame(fall);
+        else { ch.remove(); }
+      })(t0);
+    }
+  });
+}
+
+// ==================== FX: BURST / CONFETTI / POP ====================
+function spawnPop(el, text) {
+  const r = el.getBoundingClientRect();
+  const d = document.createElement('div');
+  d.className = 'pop';
+  d.textContent = text;
+  d.style.left = (r.left + r.width / 2 - 30) + 'px';
+  d.style.top = (r.top + r.height / 2 - 10) + 'px';
+  document.body.appendChild(d);
+  setTimeout(() => d.remove(), 920);
+}
+function pixelBurst(rect, colors, n) {
+  for (let i = 0; i < n; i++) {
+    const s = document.createElement('div');
+    s.className = 'sq';
+    s.style.background = colors[randInt(colors.length)];
+    s.style.left = (rect.left + rect.width / 2) + 'px';
+    s.style.top = (rect.top + rect.height / 2) + 'px';
+    document.body.appendChild(s);
+    const a = Math.random() * Math.PI * 2;
+    const sp = 60 + Math.random() * 260;
+    const vx = Math.cos(a) * sp, vy = Math.sin(a) * sp - 120;
+    let x = rect.left + rect.width / 2, y = rect.top + rect.height / 2;
+    let rot = 0;
+    const t0 = performance.now();
+    (function b(t) {
+      const dt = (t - t0) / 1000;
+      x += vx * dt; y += vy * dt + 0.5 * 600 * dt * dt;
+      rot += 300 * dt;
+      s.style.transform = `translate(${x - (rect.left + rect.width / 2)}px, ${y - (rect.top + rect.height / 2)}px) rotate(${rot}deg)`;
+      if (dt < 0.9) requestAnimationFrame(b);
+      else s.remove();
+    })(t0);
+  }
+}
+function confetti() {
+  const n = 60;
+  for (let i = 0; i < n; i++) {
+    setTimeout(() => {
+      const s = document.createElement('div');
+      s.className = 'sq';
+      s.style.background = BURST_COLORS[randInt(BURST_COLORS.length)];
+      const x = Math.random() * window.innerWidth;
+      s.style.left = x + 'px';
+      s.style.top = '-12px';
+      document.body.appendChild(s);
+      let y = -12;
+      const sway = (Math.random() - 0.5) * 120;
+      const fall = 120 + Math.random() * 160;
+      const t0 = performance.now();
+      (function c(t) {
+        const dt = (t - t0) / 1000;
+        y = -12 + fall * dt;
+        s.style.transform = `translate(${sway * dt}px, ${y}px) rotate(${dt * 400}deg)`;
+        if (y < window.innerHeight + 20) requestAnimationFrame(c);
+        else s.remove();
+      })(t0);
+    }, i * 24);
+  }
+}
+
+// ==================== TOAST ====================
+let toastTimer = 0;
+function showToast(msg) {
+  const t = $('toast');
+  t.textContent = msg;
+  t.classList.add('on');
+  clearTimeout(toastTimer);
+  toastTimer = setTimeout(() => t.classList.remove('on'), 2600);
+}
+const TOAST_MSG = {
+  NOT_IMAGE: 'NOT AN IMAGE FILE!',
+  TOO_BIG:   'FILE TOO BIG (>10MB)!',
+  TOO_SMALL: 'IMAGE TOO SMALL (<100x100)!',
+  BAD_IMAGE: "CAN'T READ THAT FILE!"
+};
+
+// ==================== FLOW / ROUND ====================
+async function startRound() {
+  gameOverFlag = false;
+  hidePanels();
+  setState(STAT.PREVIEW);
+  clearTimerUI();
+  resetTiles();
+  // pick a random vault tile to hide the image in
+  const target = randInt(6);
+  tiles[target].isTarget = true;
+  // heist preview: pixel-dissolve in 2.0s (dissolve + hold)
+  $('preview').hidden = false;
+  await runPreview();                 // dissolve 1.5s
+  await wait(PREVIEW_HOLD);           // hold ~0.5s
+  // image animates into the target tile
+  setState(STAT.HIDING);
+  await runHiding(target);
+  // shuffle ~2.4s (3 rounds x 0.8s)
+  setState(STAT.SHUFFLING);
+  await runShuffle();
+  // timer starts only after shuffle ends
+  setState(STAT.PLAYING);
+  startTimer();
+}
+
+function goToIdle(showHint) {
+  gameOverFlag = false;
+  stopTimer();
+  setState(STAT.IDLE);
+  clearTimerUI();
+  $('preview').hidden = true;
+  if (showHint) showToast('DROP A FILE OR CLICK UPLOAD');
+  showPanel('start-panel');
+}
+
+// ==================== UPLOAD HANDLING ====================
+let uploadSeq = 0;
+async function handleFiles(files) {
+  if (!files || !files.length) return;
+  const file = files[files.length - 1];      // last file wins
+  const mySeq = ++uploadSeq;
+  try {
+    const src = await prepareImage(file);
+    if (mySeq !== uploadSeq) return;          // superseded
+    await setGameImage(src);
+    startRound();
+  } catch (e) {
+    if (mySeq !== uploadSeq) return;
+    showToast(TOAST_MSG[e.message] || TOAST_MSG.BAD_IMAGE);
+  }
+}
+
+// ==================== EVENTS ====================
+function bindEvents() {
+  $('btn-upload').addEventListener('click', () => { sfxClick(); $('file').click(); });
+  $('btn-default').addEventListener('click', async () => {
+    sfxClick();
+    const mySeq = ++uploadSeq;
+    const src = await useDefaultChest();
+    if (mySeq !== uploadSeq) return;
+    await setGameImage(src);
+    startRound();
+  });
+
+  const replayMapping = {
+    'btn-win-again': () => startRound(),
+    'btn-win-new':   () => goToIdle(false),
+    'btn-lose-again': () => startRound(),
+    'btn-lose-new':   () => goToIdle(false)
+  };
+  Object.keys(replayMapping).forEach(id => {
+    $(id).addEventListener('click', () => { sfxClick(); replayMapping[id](); });
+  });
+
+  $('file').addEventListener('change', (e) => {
+    handleFiles(e.target.files);
+    e.target.value = '';
+  });
+
+  // drag & drop (capture; only meaningful at IDLE)
+  window.addEventListener('dragover', e => e.preventDefault());
+  window.addEventListener('drop', (e) => {
+    e.preventDefault();
+    if (state === STAT.IDLE && e.dataTransfer && e.dataTransfer.files.length) {
+      handleFiles(e.dataTransfer.files);
+    }
+  });
+
+  window.addEventListener('resize', () => {
+    // percentage-based layout reflows automatically; re-snap bases
+    tiles.forEach(t => applyTilePosition(t));
+  });
+}
+
+// ==================== INIT ====================
+function init() {
+  if (SCANLINES) document.body.classList.add('scanlines');
+  buildTiles();
+  bindEvents();
+  resetTiles();
+  goToIdle(false);
+}
+init();
+</script>
+</body>
+</html>
