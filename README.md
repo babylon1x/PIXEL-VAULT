@@ -56,19 +56,25 @@ PIXEL VAULT/
 
 **Option A — double click (recommended):**
 
-1. Open `C:\Users\emman\OneDrive\Desktop\PIXEL VAULT`
+1. Open this repo folder
 2. Double-click `index.html`. It opens in your default browser and is immediately playable.
 
 **Option B — command line:**
 
 ```powershell
-start "" "C:\Users\emman\OneDrive\Desktop\PIXEL VAULT\index.html"
+start "" ".\index.html"
 ```
 
 or
 
 ```bash
-cd "C:\Users\emman\OneDrive\Desktop\PIXEL VAULT" && start index.html
+cd /path/to/pixel-vault && start index.html
+```
+
+or, from inside the repo folder:
+
+```
+start index.html
 ```
 
 **Option C — serve it locally (optional, not required):**
